@@ -47,7 +47,9 @@ def train_parallel(train_f, test_f, config):
         'store_nbr', 'onpromotion', 'dcoilwtico', 
         'day_sin', 'day_cos', 'weeks_since_earthquake', 
         'lag_16', 'lag_21', 'lag_364',
-        'rolling_mean_14', 'store_fam_avg_sales'
+        'rolling_mean_14', 'store_fam_avg_sales',
+        'is_payday', 'days_to_payday',
+        'oil_7d_avg', 'oil_30d_avg',
     ]
     
     futures = []

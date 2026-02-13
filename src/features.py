@@ -10,6 +10,20 @@ def create_features(df):
     df['weeks_since_earthquake'] = (df['date'] - earthquake_date).dt.days // 7
     df['weeks_since_earthquake'] = df['weeks_since_earthquake'].clip(lower=0) 
 
+    df['day_of_month'] = df['date'].dt.day
+    df['is_payday'] = ((df['day_of_month'] == 15) | (df.date.dt.is_month_end)).astype(int)
+    
+    def days_to_payday(date):
+        if date.day <= 15:
+            return 15 - date.day
+        else:
+            return (date + pd.offsets.MonthEnd(0)).day - date.day
+            
+    df['days_to_payday'] = df['date'].apply(days_to_payday)
+
+    df['oil_7d_avg'] = df['dcoilwtico'].rolling(7).mean()
+    df['oil_30d_avg'] = df['dcoilwtico'].rolling(30).mean()
+
     df['lag_16'] = df.groupby(['store_nbr', 'family'])['sales'].transform(lambda x: x.shift(16))
     df['rolling_mean_14'] = df.groupby(['store_nbr', 'family'])['lag_16'].transform(lambda x: x.rolling(14).mean())
     df['lag_364'] = df.groupby(['store_nbr', 'family'])['sales'].transform(lambda x: x.shift(364))
