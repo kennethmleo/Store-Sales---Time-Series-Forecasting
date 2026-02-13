@@ -1,3 +1,7 @@
 .venv/
 .mypy_cache/
 data/
+__pycache__/
+*.pyc
+mlflow.db
+mlartifacts/

@@ -1,6 +1,7 @@
 import pandas as pd # type: ignore
 import numpy as np
 import ray
+import mlflow
 from prefect import task, flow
 from src.features import create_features
 from src.trainer import train_family_model
@@ -35,7 +36,7 @@ def transform_data(train, test):
     return train_f, test_f
 
 @task
-def train_parallel(train_f, test_f):
+def train_parallel(train_f, test_f, config):
     if not ray.is_initialized():
         ray.init()
     
@@ -43,30 +44,51 @@ def train_parallel(train_f, test_f):
     features = ['store_nbr', 'onpromotion', 'dcoilwtico', 'day_sin', 
                 'day_cos', 'weeks_since_earthquake', 'lag_16', 'rolling_mean_14']
     
-    train_ref = ray.put(train_f)
-    test_ref = ray.put(test_f)
-    
     futures = []
     for fam in families:
         train_fam = train_f[train_f['family'] == fam]
         test_fam = test_f[test_f['family'] == fam]
         
         futures.append(
-            train_family_model.remote(fam, train_fam, test_fam, features)
+            train_family_model.remote(fam, train_fam, test_fam, features, config)
         )
     
     results = ray.get(futures)
-    
     ray.shutdown()
     return pd.concat(results).sort_values('id')
 
-@flow(name="Store Sales Forecasting Pipeline")
-def store_sales_flow():
-    train, test = load_data()
-    train_f, test_f = transform_data(train, test)
-    
-    submission = train_parallel(train_f, test_f)
-    submission.to_csv('submissions/ray_prefect_submission.csv', index=False)
+@flow(name="Store Sales Parameter Search")
+def store_sales_flow(config, run_name):
+    mlflow.set_tracking_uri("http://127.0.0.1:5000")
+    mlflow.set_experiment("Kaggle_Store_Sales")
+    with mlflow.start_run(run_name=run_name):
+        mlflow.log_params(config)
+        
+        train, test = load_data()
+        train_f, test_f = transform_data(train, test)
+        
+        submission = train_parallel(train_f, test_f, config)
+        
+        file_path = f'submissions/submission_{run_name}.csv'
+        submission.to_csv(file_path, index=False)
+        mlflow.log_artifact(file_path)
 
 if __name__ == "__main__":
-    store_sales_flow()
+    test_configs = [
+        {
+            "name": "baseline_lgb",
+            "params": {"learning_rate": 0.05, "num_leaves": 31, "n_estimators": 200}
+        },
+        {
+            "name": "deeper_trees",
+            "params": {"learning_rate": 0.03, "num_leaves": 64, "n_estimators": 300}
+        },
+        {
+            "name": "high_regularization",
+            "params": {"learning_rate": 0.05, "num_leaves": 31, "n_estimators": 200, "lambda_l1": 0.1}
+        }
+    ]
+
+    for test in test_configs:
+        print(f"Running experiment: {test['name']}")
+        store_sales_flow(test['params'], test['name'])
