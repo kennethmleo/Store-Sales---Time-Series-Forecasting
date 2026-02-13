@@ -3,8 +3,9 @@ import numpy as np
 import ray
 import mlflow
 from prefect import task, flow
-from src.features import create_features
+from src.features import create_features, add_target_encoding
 from src.trainer import train_family_model
+import sys
 
 @task
 def load_data():
@@ -29,6 +30,7 @@ def load_data():
 def transform_data(train, test):
     # Combine to ensure feature consistency (especially for lags)
     full_df = pd.concat([train, test], axis=0).reset_index(drop=True)
+    full_df = add_target_encoding(full_df)
     full_df = create_features(full_df)
     
     train_f = full_df[full_df['sales'].notnull()]
@@ -41,8 +43,12 @@ def train_parallel(train_f, test_f, config):
         ray.init()
     
     families = train_f['family'].unique()
-    features = ['store_nbr', 'onpromotion', 'dcoilwtico', 'day_sin', 
-                'day_cos', 'weeks_since_earthquake', 'lag_16', 'rolling_mean_14']
+    features = [
+        'store_nbr', 'onpromotion', 'dcoilwtico', 
+        'day_sin', 'day_cos', 'weeks_since_earthquake', 
+        'lag_16', 'lag_21', 'lag_364',
+        'rolling_mean_14', 'store_fam_avg_sales'
+    ]
     
     futures = []
     for fam in families:
@@ -74,21 +80,33 @@ def store_sales_flow(config, run_name):
         mlflow.log_artifact(file_path)
 
 if __name__ == "__main__":
-    test_configs = [
-        {
-            "name": "baseline_lgb",
-            "params": {"learning_rate": 0.05, "num_leaves": 31, "n_estimators": 200}
-        },
-        {
-            "name": "deeper_trees",
-            "params": {"learning_rate": 0.03, "num_leaves": 64, "n_estimators": 300}
-        },
-        {
-            "name": "high_regularization",
-            "params": {"learning_rate": 0.05, "num_leaves": 31, "n_estimators": 200, "lambda_l1": 0.1}
+    if len(sys.argv) == 4:
+        best_lr = float(sys.argv[1])
+        best_leaves = int(sys.argv[2])
+        best_est = int(sys.argv[3])
+        
+        manual_config = {
+            "learning_rate": best_lr,
+            "num_leaves": best_leaves,
+            "n_estimators": best_est
         }
-    ]
+        
+        run_name = f"manual_best_lr{best_lr}_nl{best_leaves}"
+        print(f"🚀 Running Manual Best Config: {run_name}")
+        store_sales_flow(manual_config, run_name)
+        
+    else:
+        test_configs = [
+            {
+                "name": "baseline_lgb",
+                "params": {"learning_rate": 0.05, "num_leaves": 31, "n_estimators": 200}
+            },
+            {
+                "name": "deeper_trees",
+                "params": {"learning_rate": 0.03, "num_leaves": 64, "n_estimators": 300}
+            }
+        ]
 
-    for test in test_configs:
-        print(f"Running experiment: {test['name']}")
-        store_sales_flow(test['params'], test['name'])
+        for test in test_configs:
+            print(f"Running experiment: {test['name']}")
+            store_sales_flow(test['params'], test['name'])
