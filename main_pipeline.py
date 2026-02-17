@@ -82,15 +82,17 @@ def store_sales_flow(config, run_name):
         mlflow.log_artifact(file_path)
 
 if __name__ == "__main__":
-    if len(sys.argv) == 4:
+    if len(sys.argv) == 5:
         best_lr = float(sys.argv[1])
         best_leaves = int(sys.argv[2])
         best_est = int(sys.argv[3])
+        threshold = float(sys.argv[4])
         
         manual_config = {
             "learning_rate": best_lr,
             "num_leaves": best_leaves,
-            "n_estimators": best_est
+            "n_estimators": best_est,
+            "zero_threshold": threshold
         }
         
         run_name = f"manual_best_lr{best_lr}_nl{best_leaves}"
